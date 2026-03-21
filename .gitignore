@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local env/config
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# Large/raw data and generated artifacts
+data/
+artifacts/
+outputs/
+figures/
+*.h5ad
+*.h5
+*.loom
+*.zarr
+*.csv.gz
+*.parquet
+
+# Logs
+*.log
