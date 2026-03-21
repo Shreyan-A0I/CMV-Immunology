@@ -19,7 +19,7 @@ python -m pip install -r requirements.txt
 - application of training HVGs to val/test
 
 
-some one taskette help me run prerpocessing script to run data, my python file in memory went upto 80Gigs before crashing lol god save us all
+some one taskette help me run prerpocessing script to run data, my python file in memory went upto 80Gigs before crashing lol god save us all, its not super complicated, you just gotta create environments and run all jupyter cells please !!! I beg you
 
 also implemented dataloader, its simplest version havent spent a lot of time on it, you can make changes if it doesnt work in anyway, I'm sure it can be improved.
 
