@@ -9,7 +9,6 @@ def load_split(file_path):
     adata = ad.read_h5ad(file_path)
     
     # Feature Matrix (Kept sparse by default to save RAM)
-    # Teammates can call .toarray() on this if their custom math needs dense arrays
     X = adata.X
     
     # Feature Names

@@ -20,3 +20,7 @@ python -m pip install -r requirements.txt
 
 
 some one taskette help me run prerpocessing script to run data, my python file in memory went upto 80Gigs before crashing lol god save us all
+
+also implemented dataloader, its simplest version havent spent a lot of time on it, you can make changes if it doesnt work in anyway, I'm sure it can be improved.
+
+lastly added skeleton for 3 methods its just trash passing the baton to you now, SAYONARA let me sleep for next 10 days :D
