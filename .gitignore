@@ -30,6 +30,8 @@ figures/
 *.zarr
 *.csv.gz
 *.parquet
+processed_data.zip
+processed_data/
 
 # Logs
 *.log
