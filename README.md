@@ -1,5 +1,5 @@
 # Guys
-Be sure to not change gitignore file, you can't upload the data file to github anyways since its large but still cautioning.
+Be sure to not change gitignore, you can't upload the data file to github anyways since its large but still cautioning.
 
 ## Environment setup
 
@@ -19,8 +19,8 @@ python -m pip install -r requirements.txt
 - application of training HVGs to val/test
 
 
-some one taskette help me run prerpocessing script to run data, my python file in memory went upto 80Gigs before crashing lol god save us all, its not super complicated, you just gotta create environments and run all jupyter cells please !!! I beg you
-
 also implemented dataloader, its simplest version havent spent a lot of time on it, you can make changes if it doesnt work in anyway, I'm sure it can be improved.
 
 lastly added skeleton for 3 methods its just trash passing the baton to you now, SAYONARA let me sleep for next 10 days :D
+
+change to method1: we will be doing PCA and then apply k-means clustering on the principal components
