@@ -1,6 +1,8 @@
 import numpy as np
 from dataloader import load_split
 from sklearn.metrics import precision_score, recall_score, roc_auc_score, f1_score
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 # Turns score into a probability between 0 and 1
@@ -76,6 +78,7 @@ if __name__ == "__main__":
     plt.xlabel("Iteration")
     plt.ylabel("Loss")
     plt.title("Training Loss Curve")
+    plt.savefig("plots/method2_training_loss.png", dpi=300, bbox_inches='tight')
     plt.show()
 
     # Infer
@@ -85,20 +88,20 @@ if __name__ == "__main__":
     # We cant set the threshold to 0.5 because the data is imbalanced 
     # There are more postive samples than negative samples so if we set the threshold 
     # to 0.5, we might classify all samples as positive and get a high recall but low precision
-    best_roc = 0
+    best_f1 = 0
     best_threshold = 0.5 
     for threshold in np.arange(0.1, 0.95, 0.05):
         val_preds = (val_probs >= threshold).astype(int)
 
         precision = precision_score(y_val, val_preds, zero_division=0)
         recall = recall_score(y_val, val_preds, zero_division=0)
-        # f1 = f1_score(y_val, val_preds, zero_division=0)
+        f1 = f1_score(y_val, val_preds, zero_division=0)
         roc_auc = roc_auc_score(y_val, val_probs)
 
-        print(f"Threshold={threshold:.2f}, Precision={precision:.4f}, Recall={recall:.4f}, roc_auc={roc_auc:.4f}")
+        print(f"Threshold={threshold:.2f}, Precision={precision:.4f}, Recall={recall:.4f}, F1={f1:.4f}, ROC-AUC={roc_auc:.4f}")
 
-        if roc_auc > best_roc:
-            best_roc = roc_auc
+        if f1 > best_f1:
+            best_f1 = f1
             best_threshold = threshold
 
     # Use the best threshold to convert probabilities into 0/1 labels

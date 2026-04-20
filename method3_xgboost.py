@@ -1,6 +1,8 @@
 import scanpy as sc
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, label_binarize
@@ -18,7 +20,7 @@ print("Loading train.h5ad file (this may take a while for large files)...")
 
 try:
     #load h5ad
-    adata = sc.read_h5ad("train.h5ad")
+    adata = sc.read_h5ad("processed_data/train.h5ad")
     
     #use gene expression
     #convert to dense
@@ -81,8 +83,11 @@ try:
             n_jobs=-1 
         )
         
+        from sklearn.utils.class_weight import compute_sample_weight
+        sample_weights = compute_sample_weight("balanced", y_train)
+        
         #train model
-        xgb_model.fit(X_train, y_train)
+        xgb_model.fit(X_train, y_train, sample_weight=sample_weights)
         
         #make predictions
         y_pred = xgb_model.predict(X_test)
@@ -126,20 +131,15 @@ try:
         print("\nEthnicity Classification metrics:")
         print(classification_report(y_test, y_pred, target_names=target_names, zero_division=0))
         
-        #plot roc
-        plt.figure(figsize=(15, 10))
-        
-        #compute roc
+        # 1. Plot ROC Curves
+        plt.figure(figsize=(10, 8))
         fpr = dict()
         tpr = dict()
         roc_auc = dict()
-        
         for i in range(len(unique_ethnicities)):
             fpr[i], tpr[i], _ = roc_curve(y_test_bin[:, i], y_pred_proba[:, i])
             roc_auc[i] = auc(fpr[i], tpr[i])
         
-        #plot curves
-        plt.subplot(2, 2, 1)
         colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'darkgreen', 'red'])
         for i, color in zip(range(len(unique_ethnicities)), colors):
             plt.plot(fpr[i], tpr[i], color=color, lw=2,
@@ -152,9 +152,11 @@ try:
         plt.ylabel('True Positive Rate')
         plt.title('ROC Curves for Ethnicity Classification')
         plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        
-        #plot precision
-        plt.subplot(2, 2, 2)
+        plt.savefig("plots/method3_xgboost_roc.png", dpi=300, bbox_inches='tight')
+        plt.show()
+
+        # 2. Plot Precision-Recall Curves
+        plt.figure(figsize=(10, 8))
         for i, color in zip(range(len(unique_ethnicities)), colors):
             precision_curve, recall_curve, _ = precision_recall_curve(y_test_bin[:, i], y_pred_proba[:, i])
             pr_auc = auc(recall_curve, precision_curve)
@@ -167,13 +169,16 @@ try:
         plt.ylabel('Precision')
         plt.title('Precision-Recall Curves for Ethnicity Classification')
         plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        
-        #plot confusion
+        plt.savefig("plots/method3_xgboost_pr.png", dpi=300, bbox_inches='tight')
+        plt.show()
+
+        # 3. Plot Confusion Matrix
         from sklearn.metrics import confusion_matrix
-        plt.subplot(2, 2, 3)
+        plt.figure(figsize=(10, 8))
         cm = confusion_matrix(y_test, y_pred)
         plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
         plt.title('Confusion Matrix')
+        plt.grid(False)
         plt.colorbar()
         tick_marks = np.arange(len(target_names))
         plt.xticks(tick_marks, target_names, rotation=45)
@@ -181,24 +186,24 @@ try:
         plt.ylabel('True Label')
         plt.xlabel('Predicted Label')
         
-        #add annotations
         thresh = cm.max() / 2.
         for i in range(cm.shape[0]):
             for j in range(cm.shape[1]):
                 plt.text(j, i, format(cm[i, j], 'd'),
                         ha="center", va="center",
                         color="white" if cm[i, j] > thresh else "black")
-        
-        #plot distribution
-        plt.subplot(2, 2, 4)
+        plt.savefig("plots/method3_xgboost_confusion.png", dpi=300, bbox_inches='tight')
+        plt.show()
+
+        # 4. Plot Class Distribution
+        plt.figure(figsize=(10, 6))
         class_counts = np.bincount(y_test)
         plt.bar(range(len(target_names)), class_counts, color=['aqua', 'darkorange', 'cornflowerblue', 'darkgreen', 'red'][:len(target_names)])
         plt.xlabel('Ethnicity Classes')
         plt.ylabel('Number of Samples')
         plt.title('Test Set Class Distribution')
         plt.xticks(range(len(target_names)), target_names, rotation=45)
-        
-        plt.tight_layout()
+        plt.savefig("plots/method3_xgboost_distribution.png", dpi=300, bbox_inches='tight')
         plt.show()
         
         #individual performance

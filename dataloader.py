@@ -1,5 +1,6 @@
 import anndata as ad
 import numpy as np
+from sklearn.preprocessing import StandardScaler
 
 def load_split(file_path):
     """
@@ -10,6 +11,12 @@ def load_split(file_path):
     
     # Feature Matrix (Kept sparse by default to save RAM)
     X = adata.X
+    
+    if not isinstance(X, np.ndarray):
+        X = X.toarray()
+    
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
     
     # Feature Names
     genes = adata.var_names.to_numpy()
@@ -24,10 +31,14 @@ def load_split(file_path):
     # Target 3: Cell Type
     y_celltype = adata.obs["cell_type"].values
     
+    # Target 4: Donor Level
+    y_donor = adata.obs["donor_id"].values if "donor_id" in adata.obs else None
+    
     return {
         "X": X,
         "genes": genes,
         "y_cmv": y_cmv,
         "y_eth": y_eth,
-        "y_celltype": y_celltype
+        "y_celltype": y_celltype,
+        "y_donor": y_donor
     }
