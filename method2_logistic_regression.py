@@ -11,51 +11,77 @@ def sigmoid(z):
     z = np.clip(z, -500, 500)
     return 1 / (1 + np.exp(-z))
 
-# Binary cross-entropy loss + optional L1 penalty
-def compute_log_loss(y_true, y_prob, lambda_param, weights):
+# Binary cross-entropy loss + L1/L2 penalty
+def compute_log_loss(y_true, y_prob, lambda_param, weights, penalty='l1'):
     eps = 1e-12
     log_term = y_true * np.log(y_prob + eps) + (1 - y_true) * np.log(1 - y_prob + eps)
     logistic_loss = -np.mean(log_term)
 
     if weights is not None:
-        logistic_loss += lambda_param * np.sum(np.abs(weights))
+        if penalty == 'l1':
+            logistic_loss += lambda_param * np.sum(np.abs(weights))
+        else: # l2
+            logistic_loss += (lambda_param / 2) * np.sum(weights**2)
 
     return logistic_loss
 
-def fit_logistic_regression(X, y, learning_rate, lambda_param, iterations):
+def fit_logistic_regression(X, y, learning_rate, lambda_param, iterations, penalty='l1', class_weight=None):
     # initialize parameters
-    # Set everything to 0 at the start and let gradient descent find the optimal values
     n_samples, n_features = X.shape
     weights = np.zeros(n_features, dtype=np.float32)
     bias = 0.0
     y = y.astype(np.float32)
 
+    # Class weights for Balancing
+    if class_weight == 'balanced':
+        num_pos = np.sum(y)
+        num_neg = n_samples - num_pos
+        w1 = n_samples / (2 * num_pos)
+        w0 = n_samples / (2 * num_neg)
+        sample_weights = np.where(y == 1, w1, w0)
+        print(f"Using Balanced weights: Positive={w1:.2f}, Negative={w0:.2f}")
+    else:
+        sample_weights = np.ones(n_samples)
+
     # store losses so we can graph them later
     loss_history = []
+    tol_loss = 1e-6 # Early stopping tolerance
 
     # Gradient descent loop
     for step in range(iterations):
-        # Linear predictor from lecture slides: theta_0 + sum_j theta_j * x_j
+        # Linear predictor
         scores = bias + X @ weights
 
-        # Predicted probabilities P(Y=1|X), Calculate error term, and compute gradients
+        # Predicted probabilities
         probs = sigmoid(scores)
-        errors = probs - y
+        
+        # Weighted error
+        errors = (probs - y) * sample_weights
+        
+        # Calculate gradients
         grad_w = (X.T @ errors) / n_samples
         grad_b = np.mean(errors)
 
-        # Add L1 penalty to weight gradient and update values 
-        grad_w += lambda_param * np.sign(weights)
+        # Add penalty to weight gradient
+        if penalty == 'l1':
+            grad_w += lambda_param * np.sign(weights)
+        else: # l2
+            grad_w += lambda_param * weights
+
+        # Update values 
         weights -= learning_rate * grad_w
         bias -= learning_rate * grad_b
 
-        # Compute and store loss
-        # Only store loss every 100 iterations to save time and to make graph more readable
-        # Also added a print statement to track progress 
+        # Compute and store loss every 100 iterations
         if step % 100 == 0:
-            loss = compute_log_loss(y, probs, lambda_param, weights)
+            loss = compute_log_loss(y, probs, lambda_param, weights, penalty)
             loss_history.append(loss)
-            print(f"Iteration {step}")
+            print(f"Iteration {step} | Loss: {loss:.4f}")
+            
+            # Early stopping check
+            if len(loss_history) > 1 and abs(loss_history[-2] - loss_history[-1]) < tol_loss:
+                print(f"Converged early at iteration {step}")
+                break
 
     return weights, bias, loss_history
 
@@ -68,48 +94,59 @@ if __name__ == "__main__":
     X_val = val_data["X"]
     y_val = np.asarray(val_data["y_cmv"]).astype(int)
 
-    # Train model + learn parameters
-    # The parameter here is: data, data, learning_rate, lambda_param, iterations
-    weights, bias, loss_history = fit_logistic_regression(X_train, y_train, 0.01, 0.001, 1000)
+    # Use optimized hyperparameters 
+    learning_rate = 0.1
+    lambda_param = 0.001
+    iterations = 1000
+    penalty = 'l2'
+    class_weight = 'balanced'
+
+    print(f"Training optimized LR with LR={learning_rate}, Penalty={penalty.upper()}, Balanced={class_weight is not None}...")
+    weights, bias, loss_history = fit_logistic_regression(
+        X_train, y_train, learning_rate, lambda_param, iterations, 
+        penalty=penalty, 
+        class_weight=class_weight
+    )
 
     # Plot training loss over gradient descent steps
-    plt.figure(figsize=(8, 5))
-    plt.plot(loss_history)
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(0, len(loss_history)*100, 100), loss_history)
     plt.xlabel("Iteration")
     plt.ylabel("Loss")
-    plt.title("Training Loss Curve")
-    plt.savefig("plots/method2_training_loss.png", dpi=300, bbox_inches='tight')
-    plt.show()
+    plt.title(f"Optimized Logistic Regression Training Loss ({penalty.upper()}, Balanced)")
+    plt.grid(True, alpha=0.3)
+    plt.savefig("plots/method2_optimized_loss.png", dpi=300, bbox_inches='tight')
+    plt.close()
 
     # Infer
     scores = X_val @ weights + bias
     val_probs = sigmoid(scores)
+    
     # Find the best threshold based on F1 score
-    # We cant set the threshold to 0.5 because the data is imbalanced 
-    # There are more postive samples than negative samples so if we set the threshold 
-    # to 0.5, we might classify all samples as positive and get a high recall but low precision
     best_f1 = 0
     best_threshold = 0.5 
-    for threshold in np.arange(0.1, 0.95, 0.05):
+    print("\nSearching for optimal confidence threshold:")
+    for threshold in np.arange(0.1, 0.95, 0.025):
         val_preds = (val_probs >= threshold).astype(int)
-
         precision = precision_score(y_val, val_preds, zero_division=0)
         recall = recall_score(y_val, val_preds, zero_division=0)
         f1 = f1_score(y_val, val_preds, zero_division=0)
         roc_auc = roc_auc_score(y_val, val_probs)
 
-        print(f"Threshold={threshold:.2f}, Precision={precision:.4f}, Recall={recall:.4f}, F1={f1:.4f}, ROC-AUC={roc_auc:.4f}")
+        print(f"Threshold={threshold:.3f}, Precision={precision:.4f}, Recall={recall:.4f}, F1={f1:.4f}, ROC-AUC={roc_auc:.4f}")
 
         if f1 > best_f1:
             best_f1 = f1
             best_threshold = threshold
 
     # Use the best threshold to convert probabilities into 0/1 labels
+    print(f"\nFinal Best Threshold: {best_threshold:.3f}")
     val_preds = (val_probs >= best_threshold).astype(int)
 
-    # Evaluation
-    print("Precision:", precision_score(y_val, val_preds, zero_division=0))
-    print("Recall:", recall_score(y_val, val_preds, zero_division=0))
-    print("F1 Score:", f1_score(y_val, val_preds, zero_division=0))
-    print("ROC-AUC:", roc_auc_score(y_val, val_probs))
+    # Final Evaluation
+    print("\nOptimized Performance Summary:")
+    print(f"Precision: {precision_score(y_val, val_preds, zero_division=0):.4f}")
+    print(f"Recall: {recall_score(y_val, val_preds, zero_division=0):.4f}")
+    print(f"F1 Score: {f1_score(y_val, val_preds, zero_division=0):.4f}")
+    print(f"ROC-AUC: {roc_auc_score(y_val, val_probs):.4f}")
     
