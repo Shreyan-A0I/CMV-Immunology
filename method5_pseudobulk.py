@@ -32,35 +32,55 @@ def run_pseudobulk_evaluation():
     y_train_eth_enc = le.fit_transform(y_train_eth_clean)
     y_val_eth_enc = le.transform(y_val_eth_clean)
 
-    # Train cell-level models
-    print("Training Logistic Regression (CMV)...")
+def run_pseudobulk_evaluation():
+    train_data = load_split("processed_data/train.h5ad")
+    val_data = load_split("processed_data/val.h5ad")
+    
+    X_train, y_train_cmv, y_train_eth = train_data["X"], train_data["y_cmv"], train_data["y_eth"]
+    X_val, y_val_cmv, y_val_eth = val_data["X"], val_data["y_cmv"], val_data["y_eth"]
+    y_val_donor = val_data["y_donor"]
+
+    if y_val_donor is None:
+        raise ValueError("y_donor missing from validation data.")
+
+    # Ethnicity filter
+    train_eth_mask = pd.notna(y_train_eth)
+    X_train_eth, y_train_eth_clean = X_train[train_eth_mask], y_train_eth[train_eth_mask]
+    
+    val_eth_mask = pd.notna(y_val_eth)
+    X_val_eth, y_val_eth_clean = X_val[val_eth_mask], y_val_eth[val_eth_mask]
+    y_val_donor_eth = y_val_donor[val_eth_mask]
+
+    le = LabelEncoder()
+    y_train_eth_enc = le.fit_transform(y_train_eth_clean)
+    y_val_eth_enc = le.transform(y_val_eth_clean)
+
+    # Models
+    print("Training models...")
     lr_model = LogisticRegression(max_iter=1000, random_state=42)
     lr_model.fit(X_train, y_train_cmv)
 
-    print("Training XGBoost (Ethnicity)...")
     sample_weights = compute_sample_weight("balanced", y_train_eth_enc)
     xgb_model = xgb.XGBClassifier(max_depth=6, learning_rate=0.3, n_estimators=50, random_state=42, n_jobs=-1)
     xgb_model.fit(X_train_eth, y_train_eth_enc, sample_weight=sample_weights)
 
-    # Generate probabilities
-    print("Generating predictions...")
+    # Predicting
     cmv_probs = lr_model.predict_proba(X_val)[:, 1]
     eth_probs = xgb_model.predict_proba(X_val_eth)
 
-    # Aggregate and evaluate donor-level results using Pandas
-    print("\nEvaluating clinical donor-level results...")
+    # Aggregate
+    print("\nDonor-level summary:")
     
-    # CMV Evaluation
+    # CMV
     cmv_df = pd.DataFrame({'donor': y_val_donor, 'true': y_val_cmv, 'prob': cmv_probs})
     cmv_agg = cmv_df.groupby('donor').agg({'true': 'first', 'prob': 'mean'})
     cmv_pred = (cmv_agg['prob'] >= 0.5).astype(int)
     
-    print(f"\nCMV Results (n={len(cmv_agg)} donors)")
+    print(f"\nCMV (n={len(cmv_agg)})")
     print(f"Accuracy: {accuracy_score(cmv_agg['true'], cmv_pred):.4f}")
-    print(f"F1-Score: {f1_score(cmv_agg['true'], cmv_pred, zero_division=0):.4f}")
-    print(classification_report(cmv_agg['true'], cmv_pred, target_names=["Negative", "Positive"], zero_division=0))
+    print(classification_report(cmv_agg['true'], cmv_pred, target_names=["Neg", "Pos"], zero_division=0))
 
-    # Ethnicity Evaluation
+    # Ethnicity
     eth_df = pd.DataFrame(eth_probs)
     eth_df['donor'] = y_val_donor_eth
     eth_df['true'] = y_val_eth_enc
@@ -69,9 +89,8 @@ def run_pseudobulk_evaluation():
     eth_true = eth_agg['true'].astype(int)
     eth_pred = eth_agg.drop(columns=['true']).values.argmax(axis=1)
 
-    print(f"\nEthnicity Results (n={len(eth_agg)} donors)")
+    print(f"\nEthnicity (n={len(eth_agg)})")
     print(f"Accuracy: {accuracy_score(eth_true, eth_pred):.4f}")
-    print(f"Macro F1: {f1_score(eth_true, eth_pred, average='macro', zero_division=0):.4f}")
     print(classification_report(eth_true, eth_pred, labels=np.arange(len(le.classes_)), target_names=le.classes_, zero_division=0))
 
 if __name__ == "__main__":

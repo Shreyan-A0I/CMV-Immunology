@@ -3,10 +3,6 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 
 def load_split(file_path):
-    """
-    Loads a processed .h5ad file and returns a dictionary of arrays 
-    for custom scratch-built models.
-    """
     adata = ad.read_h5ad(file_path)
     
     # Feature Matrix (Kept sparse by default to save RAM)

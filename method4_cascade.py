@@ -17,7 +17,7 @@ def run_cascaded_prior():
     X_train, y_train_cmv, y_train_eth = train_data["X"], train_data["y_cmv"].astype(int), train_data["y_eth"]
     X_val, y_val_cmv, y_val_eth = val_data["X"], val_data["y_cmv"].astype(int), val_data["y_eth"]
 
-    # Filter NaNs in ethnicity manually to match XGBoost reqs
+    # Filter NaNs for XGBoost
     valid_train = pd.notna(y_train_eth)
     X_train, y_train_cmv, y_train_eth = X_train[valid_train], y_train_cmv[valid_train], y_train_eth[valid_train]
     
@@ -49,8 +49,8 @@ def run_cascaded_prior():
     )
     xgb_model.fit(X_train, y_train_eth_enc, sample_weight=sample_weights)
 
-    # 3. Predict max-confidence ethnicity
-    print("Predicting ethnicity for assigning priors...")
+    # 3. Map priors
+    print("Mapping priors to data...")
     pred_eth_train = xgb_model.predict(X_train)
     pred_eth_val = xgb_model.predict(X_val)
 
@@ -58,31 +58,39 @@ def run_cascaded_prior():
     prior_train = np.vectorize(priors.get)(pred_eth_train).reshape(-1, 1).astype(np.float32)
     prior_val = np.vectorize(priors.get)(pred_eth_val).reshape(-1, 1).astype(np.float32)
 
-    # NOTE: The custom Gradient Descent LR model requires standardized inputs. 
+    # Standardize prior feature
     prior_mean = np.mean(prior_train)
     prior_std = np.std(prior_train) + 1e-8
     prior_train_scaled = (prior_train - prior_mean) / prior_std
     prior_val_scaled = (prior_val - prior_mean) / prior_std
 
-    # 5. Combine features (Gene Expression + 1 Prior Feature)
+    # 4. Feature expansion
     X_train_expanded = np.hstack([X_train, prior_train_scaled])
     X_val_expanded = np.hstack([X_val, prior_val_scaled])
 
-    print("\nTraining Baseline Logistic Regression (Genes Only)...")
-    lr = 0.01
+    # settings (matched to optimized method 2)
+    lr = 0.1
     lam = 0.001
     iters = 1000
-    weights_base, bias_base, loss_base = fit_logistic_regression(X_train, y_train_cmv, lr, lam, iters)
-    
-    print("\nTraining Cascaded Logistic Regression (Genes + Ethnicity Prior)...")
-    weights_casc, bias_casc, loss_casc = fit_logistic_regression(X_train_expanded, y_train_cmv, lr, lam, iters)
+    penalty = 'l2'
+    cw = 'balanced'
 
-    # 6. Evaluate
+    print("\nBaseline LR (Genes)...")
+    weights_base, bias_base, loss_base = fit_logistic_regression(
+        X_train, y_train_cmv, lr, lam, iters, penalty=penalty, class_weight=cw
+    )
+    
+    print("\nCascaded LR (Genes + Prior)...")
+    weights_casc, bias_casc, loss_casc = fit_logistic_regression(
+        X_train_expanded, y_train_cmv, lr, lam, iters, penalty=penalty, class_weight=cw
+    )
+
+    # 5. Evaluate
     def evaluate(X, weights, bias, y_true, name):
         scores = X @ weights + bias
         probs = sigmoid(scores)
         best_f1, best_thresh = 0, 0.5
-        for t in np.arange(0.1, 0.95, 0.05):
+        for t in np.arange(0.1, 0.95, 0.025):
             preds = (probs >= t).astype(int)
             f1 = f1_score(y_true, preds, zero_division=0)
             if f1 > best_f1:
@@ -93,23 +101,23 @@ def run_cascaded_prior():
         roc = roc_auc_score(y_true, probs)
         prec = precision_score(y_true, preds_best, zero_division=0)
         rec = recall_score(y_true, preds_best, zero_division=0)
-        print(f"[{name}] Optimal Thresh: {best_thresh:.2f} | Precision: {prec:.4f} | Recall: {rec:.4f} | F1: {best_f1:.4f} | ROC-AUC: {roc:.4f}")
+        print(f"[{name}] T={best_thresh:.3f} | Prec={prec:.4f} | Rec={rec:.4f} | F1={best_f1:.4f} | AUC={roc:.4f}")
         return probs
 
-    print("\n--- Final Validation Results ---")
-    _ = evaluate(X_val, weights_base, bias_base, y_val_cmv, "Baseline LR")
-    _ = evaluate(X_val_expanded, weights_casc, bias_casc, y_val_cmv, "Cascaded LR")
+    print("\nValidation Benchmarks:")
+    evaluate(X_val, weights_base, bias_base, y_val_cmv, "Base")
+    evaluate(X_val_expanded, weights_casc, bias_casc, y_val_cmv, "Cascade")
 
-    # 7. Plot Loss Curve Comparison
+    # Plot
     plt.figure(figsize=(10, 6))
-    plt.plot(loss_base, label="Baseline LR (Genes)", color="blue")
-    plt.plot(loss_casc, label="Cascaded LR (Genes + Prior)", color="orange", linestyle="--")
-    plt.title("Training Loss Progression: Baseline vs Cascaded Model")
-    plt.xlabel("Iteration (x100)")
-    plt.ylabel("Binary Cross Entropy Loss")
+    plt.plot(loss_base, label="Base LR", color="blue")
+    plt.plot(loss_casc, label="Cascaded LR", color="orange")
+    plt.title("Convergence Comparison")
+    plt.xlabel("Step (x100)")
+    plt.ylabel("Loss")
     plt.legend()
     plt.savefig("plots/method4_cascade_loss.png", dpi=300, bbox_inches='tight')
-    plt.show()
+    plt.close()
 
 if __name__ == "__main__":
     run_cascaded_prior()

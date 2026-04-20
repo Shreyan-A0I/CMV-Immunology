@@ -143,8 +143,7 @@ if __name__ == "__main__":
     print(f"\nFinal Best Threshold: {best_threshold:.3f}")
     val_preds = (val_probs >= best_threshold).astype(int)
 
-    # Final Evaluation
-    print("\nOptimized Performance Summary:")
+    print("\nResults:")
     print(f"Precision: {precision_score(y_val, val_preds, zero_division=0):.4f}")
     print(f"Recall: {recall_score(y_val, val_preds, zero_division=0):.4f}")
     print(f"F1 Score: {f1_score(y_val, val_preds, zero_division=0):.4f}")
