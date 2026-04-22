@@ -70,6 +70,9 @@ def run_clustering_analysis(file_path):
     pca = PCA(n_components=25)
     X_pca = pca.fit_transform(X)
     X_2d = X_pca[:, :2] 
+    
+    explained_variance = np.sum(pca.explained_variance_ratio_) * 100
+    print(f"Variance explained by 25 PCs: {explained_variance:.2f}%")
 
     print(f"K-Means (25 PCs)...")
     labels_pc, _ = kmeans(X_pca, k=k)
@@ -108,7 +111,26 @@ def run_clustering_analysis(file_path):
     plt.savefig("plots/method1_comparison_presentation.png", dpi=300, bbox_inches='tight')
     plt.close()
 
-    # Heatmap Purity
+    # Plot 2: Scree Plot (Explained Variance)
+    plt.figure(figsize=(10, 6))
+    var_exp = pca.explained_variance_ratio_ * 100
+    cum_var_exp = np.cumsum(var_exp)
+    
+    plt.bar(range(1, 26), var_exp, alpha=0.5, align='center', label='Individual variance', color='royalblue')
+    plt.step(range(1, 26), cum_var_exp, where='mid', label='Cumulative variance', color='crimson', lw=2)
+    
+    plt.ylabel('Explained Variance Ratio (%)')
+    plt.xlabel('Principal Component Index')
+    plt.title('Scree Plot: Variance Explained by Components', fontsize=14)
+    plt.xticks(range(1, 26, 2))
+    plt.legend(loc='best')
+    plt.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig("plots/method1_scree_plot.png", dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # Plot 3: Heatmap Purity
     plt.figure(figsize=(12, 8))
     contingency_df = pd.DataFrame({'Cluster': labels_pc, 'Cell Type': y_celltype})
     heatmap_data = pd.crosstab(contingency_df['Cell Type'], contingency_df['Cluster'])

@@ -1,6 +1,6 @@
 import numpy as np
 from dataloader import load_split
-from sklearn.metrics import precision_score, recall_score, roc_auc_score, f1_score
+from sklearn.metrics import precision_score, recall_score, roc_auc_score, f1_score, roc_curve, precision_recall_curve, auc
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -149,3 +149,35 @@ if __name__ == "__main__":
     print(f"F1 Score: {f1_score(y_val, val_preds, zero_division=0):.4f}")
     print(f"ROC-AUC: {roc_auc_score(y_val, val_probs):.4f}")
     
+    # Final Performance Plots
+    plt.figure(figsize=(14, 6))
+    
+    # ROC Curve
+    fpr, tpr, _ = roc_curve(y_val, val_probs)
+    roc_auc = auc(fpr, tpr)
+    plt.subplot(1, 2, 1)
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic')
+    plt.legend(loc="lower right")
+    plt.grid(alpha=0.3)
+
+    # Precision-Recall Curve
+    prec, rec, _ = precision_recall_curve(y_val, val_probs)
+    pr_auc = auc(rec, prec)
+    plt.subplot(1, 2, 2)
+    plt.plot(rec, prec, color='blue', lw=2, label=f'PR curve (area = {pr_auc:.2f})')
+    plt.axhline(y=np.mean(y_val), color='grey', linestyle='--', label='Random Chance')
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title('Precision-Recall Curve')
+    plt.legend(loc="upper right")
+    plt.grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig("plots/method2_performance.png", dpi=300, bbox_inches='tight')
+    plt.close()
