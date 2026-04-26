@@ -1,4 +1,4 @@
-from dataloader import load_split
+import scanpy as sc
 import pandas as pd
 import numpy as np
 import matplotlib
@@ -11,106 +11,214 @@ from sklearn.metrics import (accuracy_score, classification_report,
                            roc_curve, auc, precision_recall_curve)
 import xgboost as xgb
 from itertools import cycle
-from sklearn.utils.class_weight import compute_sample_weight
 
-print("Loading data using centralized dataloader...")
+#configure scanpy
+sc.settings.verbosity = 3
+sc.settings.set_figure_params(dpi=80, facecolor='white')
+
+print("Loading train.h5ad file (this may take a while for large files)...")
 
 try:
-    # Load training data
-    data = load_split("processed_data/train.h5ad")
-    X = data["X"]
-    y = data["y_eth"]
+    #load h5ad
+    adata = sc.read_h5ad("processed_data/train.h5ad")
     
-    if y is None:
-        raise ValueError("Ethnicity labels not found in the dataset.")
-
-    # Remove missing values if any
-    valid_mask = pd.notna(y)
-    X = X[valid_mask]
-    y = y[valid_mask]
-
-    # Encode labels
-    le = LabelEncoder()
-    y_encoded = le.fit_transform(y)
-    n_classes = len(le.classes_)
+    #use gene expression
+    #convert to dense
+    if adata.shape[0] > 0:
+        X = adata.X.todense() if hasattr(adata.X, 'todense') else adata.X
+        y_data = adata.obs
+    else:
+        X = adata.X.todense() if hasattr(adata.X, 'todense') else adata.X
+        y_data = adata.obs
     
-    print(f"Data shape: {X.shape}")
-    print(f"Found {n_classes} ethnicity groups: {list(le.classes_)}")
-
-    # Split data (we split our train set further for internal validation)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
-    )
+    X = np.array(X)
     
-    # Create XGBoost model
-    print("\nTraining XGBoost model for Ethnicity Prediction...")
-    xgb_model = xgb.XGBClassifier(
-        max_depth=6,
-        learning_rate=0.3,
-        n_estimators=50,  
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        n_jobs=-1,
-        objective='multi:softprob' if n_classes > 2 else 'binary:logistic'
-    )
+    #find ethnicity columns
+    ethnicity_cols = ['ethnicity', 'race', 'ancestry', 'subject.race', 'subject.ethnicity', 'self_reported_ethnicity']
+    ethnicity_col = None
     
-    # Handle class imbalance
-    sample_weights = compute_sample_weight("balanced", y_train)
-    
-    # Train model
-    xgb_model.fit(X_train, y_train, sample_weight=sample_weights)
-
-    # Predictions
-    y_pred = xgb_model.predict(X_test)
-    y_prob = xgb_model.predict_proba(X_test)
-
-    # 1. Classification Report
-    print("\nEvaluation Results:")
-    print(classification_report(y_test, y_pred, target_names=le.classes_))
-    
-    # 2. Confusion Matrix Plot
-    from sklearn.metrics import confusion_matrix
-    import seaborn as sns
-    
-    cm = confusion_matrix(y_test, y_pred)
-    cm_perc = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
-    
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm_perc, annot=True, fmt=".1f", cmap="Blues",
-                xticklabels=le.classes_, yticklabels=le.classes_)
-    plt.ylabel('Ground Truth')
-    plt.xlabel('Predicted Ethnicity')
-    plt.title('Ethnicity Prediction: Confusion Matrix (%)')
-    plt.savefig("plots/method3_xgboost_confusion.png")
-    plt.close()
-
-    # 3. Multi-class ROC Curve
-    plt.figure(figsize=(10, 8))
-    y_test_bin = label_binarize(y_test, classes=range(n_classes))
-    
-    for i, class_name in enumerate(le.classes_):
-        if n_classes == 2: # Binary case
-            fpr, tpr, _ = roc_curve(y_test, y_prob[:, 1])
-            roc_auc = auc(fpr, tpr)
-            plt.plot(fpr, tpr, label=f'ROC curve (AUC = {roc_auc:.2f})')
+    for col in ethnicity_cols:
+        if col in y_data.columns:
+            ethnicity_col = col
             break
+    
+    #search ethnicity keywords
+    # i didn't actually remember the column so I just searched these terms lol
+    if not ethnicity_col:
+        for col in y_data.columns:
+            if any(keyword in col.lower() for keyword in ['ethnicity', 'race']):
+                ethnicity_col = col
+                print(f"Found potential ethnicity column: {col}")
+                break
+    
+    if ethnicity_col:
+        y = y_data[ethnicity_col].values
+        
+        #remove missing values
+        valid_mask = pd.notna(y)
+        X = X[valid_mask]
+        y = y[valid_mask]
+        
+        #encode labels
+        if y.dtype == 'object' or isinstance(y[0], str):
+            le = LabelEncoder()
+            y = le.fit_transform(y)
+        
+        unique_ethnicities, counts = np.unique(y, return_counts=True)
+        
+        #split data
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+        
+        #create xgboost
+        print("\nTraining XGBoost model")
+        xgb_model = xgb.XGBClassifier(
+            max_depth=6,
+            learning_rate=0.3,
+            n_estimators=50,  
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=42,
+            n_jobs=-1 
+        )
+        
+        from sklearn.utils.class_weight import compute_sample_weight
+        sample_weights = compute_sample_weight("balanced", y_train)
+        
+        #train model
+        xgb_model.fit(X_train, y_train, sample_weight=sample_weights)
+        
+        #make predictions
+        y_pred = xgb_model.predict(X_test)
+        y_pred_proba = xgb_model.predict_proba(X_test)
+        
+        #evaluate model
+        accuracy = accuracy_score(y_test, y_pred)
+        print(f"\nEthnicity Prediction Accuracy: {accuracy:.4f}")
+        
+        #calculate precision recall
+        precision_macro = precision_score(y_test, y_pred, average='macro', zero_division=0)
+        precision_weighted = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+        recall_macro = recall_score(y_test, y_pred, average='macro', zero_division=0)
+        recall_weighted = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+        
+        print(f"\nDetailed Evaluation Metrics:")
+        print(f"Precision (Macro Average): {precision_macro:.4f}")
+        print(f"Precision (Weighted Average): {precision_weighted:.4f}")
+        print(f"Recall (Macro Average): {recall_macro:.4f}")
+        print(f"Recall (Weighted Average): {recall_weighted:.4f}")
+        
+        #calculate roc
+        #binarize output
+        y_test_bin = label_binarize(y_test, classes=range(len(unique_ethnicities)))
+        
+        #calculate auc
+        try:
+            roc_auc_ovo = roc_auc_score(y_test, y_pred_proba, multi_class='ovo', average='macro')
+            roc_auc_ovr = roc_auc_score(y_test, y_pred_proba, multi_class='ovr', average='macro')
+            print(f"ROC-AUC (One-vs-One): {roc_auc_ovo:.4f}")
+            print(f"ROC-AUC (One-vs-Rest): {roc_auc_ovr:.4f}")
+        except Exception as e:
+            print(f"ROC-AUC no work: {e}")
+        
+        #print report
+        if 'le' in locals():
+            target_names = le.classes_
         else:
-            fpr, tpr, _ = roc_curve(y_test_bin[:, i], y_prob[:, i])
-            roc_auc = auc(fpr, tpr)
-            plt.plot(fpr, tpr, label=f'{class_name} (AUC = {roc_auc:.2f})')
+            target_names = [f"Ethnicity_{i}" for i in range(len(unique_ethnicities))]
+        
+        print("\nEthnicity Classification metrics:")
+        print(classification_report(y_test, y_pred, target_names=target_names, zero_division=0))
+        
+        # 1. Plot ROC Curves
+        plt.figure(figsize=(10, 8))
+        fpr = dict()
+        tpr = dict()
+        roc_auc = dict()
+        for i in range(len(unique_ethnicities)):
+            fpr[i], tpr[i], _ = roc_curve(y_test_bin[:, i], y_pred_proba[:, i])
+            roc_auc[i] = auc(fpr[i], tpr[i])
+        
+        colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'darkgreen', 'red'])
+        for i, color in zip(range(len(unique_ethnicities)), colors):
+            plt.plot(fpr[i], tpr[i], color=color, lw=2,
+                     label=f'{target_names[i]} (AUC = {roc_auc[i]:.2f})')
+        
+        plt.plot([0, 1], [0, 1], 'k--', lw=2)
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('ROC Curves for Ethnicity Classification')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.savefig("plots/method3_xgboost_roc.png", dpi=300, bbox_inches='tight')
+        plt.show()
 
-    plt.plot([0, 1], [0, 1], 'k--', lw=2)
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Multi-class ROC: Ethnicity Prediction')
-    plt.legend(loc="lower right")
-    plt.savefig("plots/method3_xgboost_roc.png")
-    plt.close()
+        # 2. Plot Precision-Recall Curves
+        plt.figure(figsize=(10, 8))
+        for i, color in zip(range(len(unique_ethnicities)), colors):
+            precision_curve, recall_curve, _ = precision_recall_curve(y_test_bin[:, i], y_pred_proba[:, i])
+            pr_auc = auc(recall_curve, precision_curve)
+            plt.plot(recall_curve, precision_curve, color=color, lw=2,
+                     label=f'{target_names[i]} (AUC = {pr_auc:.2f})')
+        
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall Curves for Ethnicity Classification')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.savefig("plots/method3_xgboost_pr.png", dpi=300, bbox_inches='tight')
+        plt.show()
 
-    print("\nResults and plots saved successfully.")
+        # 3. Plot Confusion Matrix
+        from sklearn.metrics import confusion_matrix
+        plt.figure(figsize=(10, 8))
+        cm = confusion_matrix(y_test, y_pred)
+        plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+        plt.title('Confusion Matrix')
+        plt.grid(False)
+        plt.colorbar()
+        tick_marks = np.arange(len(target_names))
+        plt.xticks(tick_marks, target_names, rotation=45)
+        plt.yticks(tick_marks, target_names)
+        plt.ylabel('True Label')
+        plt.xlabel('Predicted Label')
+        
+        thresh = cm.max() / 2.
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                plt.text(j, i, format(cm[i, j], 'd'),
+                        ha="center", va="center",
+                        color="white" if cm[i, j] > thresh else "black")
+        plt.savefig("plots/method3_xgboost_confusion.png", dpi=300, bbox_inches='tight')
+        plt.show()
 
+        # 4. Plot Class Distribution
+        plt.figure(figsize=(10, 6))
+        class_counts = np.bincount(y_test)
+        plt.bar(range(len(target_names)), class_counts, color=['aqua', 'darkorange', 'cornflowerblue', 'darkgreen', 'red'][:len(target_names)])
+        plt.xlabel('Ethnicity Classes')
+        plt.ylabel('Number of Samples')
+        plt.title('Test Set Class Distribution')
+        plt.xticks(range(len(target_names)), target_names, rotation=45)
+        plt.savefig("plots/method3_xgboost_distribution.png", dpi=300, bbox_inches='tight')
+        plt.show()
+        
+        #individual performance
+        print("\nIndividual Class Performance:")
+        for i, class_name in enumerate(target_names):
+            class_precision = precision_score(y_test == i, y_pred == i, zero_division=0)
+            class_recall = recall_score(y_test == i, y_pred == i, zero_division=0)
+            print(f"{class_name:<20} - Precision: {class_precision:.4f}, Recall: {class_recall:.4f}, ROC-AUC: {roc_auc[i]:.4f}")
+        
+        #show importance
+        print("\nTop 10 most important genes for ethnicity prediction:")
+        feature_importance = xgb_model.feature_importances_
+        top_features_idx = np.argsort(feature_importance)[-10:][::-1]
+        
+        for idx in top_features_idx:
+            print(f"  {adata.var_names[idx]}: {feature_importance[idx]:.4f}")
 except Exception as e:
-    print(f"Error: {e}")
+    print(f"Error loading or processing data: {e}")
