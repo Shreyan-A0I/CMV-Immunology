@@ -36,4 +36,3 @@ Download processed files (`train.h5ad`, `val.h5ad`) and place them in `processed
    ```
    *Note: Results are saved to `plots/` and `results/`.*
 ---
-For more in-depth biological rationale and performance results, see [DETAILS.md](./DETAILS.md).
