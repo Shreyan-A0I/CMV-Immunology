@@ -11,19 +11,19 @@ from sklearn.metrics import (accuracy_score, classification_report,
                            roc_curve, auc, precision_recall_curve)
 import xgboost as xgb
 from itertools import cycle
+from sklearn.utils.class_weight import compute_sample_weight
+from sklearn.metrics import confusion_matrix
 
-#configure scanpy
 sc.settings.verbosity = 3
 sc.settings.set_figure_params(dpi=80, facecolor='white')
 
 print("Loading train.h5ad file (this may take a while for large files)...")
 
 try:
-    #load h5ad
+    # Load Data
     adata = sc.read_h5ad("processed_data/train.h5ad")
     
-    #use gene expression
-    #convert to dense
+    # Use gene expression data and convert to dense if sparse
     if adata.shape[0] > 0:
         X = adata.X.todense() if hasattr(adata.X, 'todense') else adata.X
         y_data = adata.obs
@@ -33,7 +33,7 @@ try:
     
     X = np.array(X)
     
-    #find ethnicity columns
+    # Find ethnicity column
     ethnicity_cols = ['ethnicity', 'race', 'ancestry', 'subject.race', 'subject.ethnicity', 'self_reported_ethnicity']
     ethnicity_col = None
     
@@ -42,8 +42,7 @@ try:
             ethnicity_col = col
             break
     
-    #search ethnicity keywords
-    # i didn't actually remember the column so I just searched these terms lol
+    # Searching ethnicity column if not found in common names
     if not ethnicity_col:
         for col in y_data.columns:
             if any(keyword in col.lower() for keyword in ['ethnicity', 'race']):
@@ -54,24 +53,24 @@ try:
     if ethnicity_col:
         y = y_data[ethnicity_col].values
         
-        #remove missing values
+        # Remove missing values
         valid_mask = pd.notna(y)
         X = X[valid_mask]
         y = y[valid_mask]
         
-        #encode labels
+        # Label Encoding
         if y.dtype == 'object' or isinstance(y[0], str):
             le = LabelEncoder()
             y = le.fit_transform(y)
         
         unique_ethnicities, counts = np.unique(y, return_counts=True)
         
-        #split data
+        # Data Splitting
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42, stratify=y
         )
         
-        #create xgboost
+        # XGBoost Model Training and Evaluation
         print("\nTraining XGBoost model")
         xgb_model = xgb.XGBClassifier(
             max_depth=6,
@@ -83,21 +82,19 @@ try:
             n_jobs=-1 
         )
         
-        from sklearn.utils.class_weight import compute_sample_weight
         sample_weights = compute_sample_weight("balanced", y_train)
         
-        #train model
+        # Model Training
         xgb_model.fit(X_train, y_train, sample_weight=sample_weights)
         
-        #make predictions
+        # Predictions and Evaluation
         y_pred = xgb_model.predict(X_test)
         y_pred_proba = xgb_model.predict_proba(X_test)
         
-        #evaluate model
         accuracy = accuracy_score(y_test, y_pred)
         print(f"\nEthnicity Prediction Accuracy: {accuracy:.4f}")
         
-        #calculate precision recall
+        # Metrics Calculation
         precision_macro = precision_score(y_test, y_pred, average='macro', zero_division=0)
         precision_weighted = precision_score(y_test, y_pred, average='weighted', zero_division=0)
         recall_macro = recall_score(y_test, y_pred, average='macro', zero_division=0)
@@ -109,11 +106,10 @@ try:
         print(f"Recall (Macro Average): {recall_macro:.4f}")
         print(f"Recall (Weighted Average): {recall_weighted:.4f}")
         
-        #calculate roc
-        #binarize output
+        # Output binarized labels for ROC-AUC calculation
         y_test_bin = label_binarize(y_test, classes=range(len(unique_ethnicities)))
         
-        #calculate auc
+        # AUC Calculation
         try:
             roc_auc_ovo = roc_auc_score(y_test, y_pred_proba, multi_class='ovo', average='macro')
             roc_auc_ovr = roc_auc_score(y_test, y_pred_proba, multi_class='ovr', average='macro')
@@ -122,7 +118,6 @@ try:
         except Exception as e:
             print(f"ROC-AUC no work: {e}")
         
-        #print report
         if 'le' in locals():
             target_names = le.classes_
         else:
@@ -173,7 +168,6 @@ try:
         plt.show()
 
         # 3. Plot Confusion Matrix
-        from sklearn.metrics import confusion_matrix
         plt.figure(figsize=(10, 8))
         cm = confusion_matrix(y_test, y_pred)
         plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
@@ -206,14 +200,13 @@ try:
         plt.savefig("plots/method3_xgboost_distribution.png", dpi=300, bbox_inches='tight')
         plt.show()
         
-        #individual performance
+        # Individual Class Performance
         print("\nIndividual Class Performance:")
         for i, class_name in enumerate(target_names):
             class_precision = precision_score(y_test == i, y_pred == i, zero_division=0)
             class_recall = recall_score(y_test == i, y_pred == i, zero_division=0)
             print(f"{class_name:<20} - Precision: {class_precision:.4f}, Recall: {class_recall:.4f}, ROC-AUC: {roc_auc[i]:.4f}")
         
-        #show importance
         print("\nTop 10 most important genes for ethnicity prediction:")
         feature_importance = xgb_model.feature_importances_
         top_features_idx = np.argsort(feature_importance)[-10:][::-1]

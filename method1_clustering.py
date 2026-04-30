@@ -5,13 +5,12 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import LabelEncoder
-import matplotlib.cm as cm
 from collections import Counter
 import umap
 import seaborn as sns
 from sklearn.metrics import adjusted_rand_score
 import pandas as pd
+from matplotlib.lines import Line2D
 
 # %%
 def run_clustering_analysis(file_path):
@@ -71,7 +70,7 @@ def run_clustering_analysis(file_path):
     print(f"K-Means (Raw Genes)...")
     labels_raw, _ = kmeans(X, k=k)
 
-    # --- Label Alignment (Majority Voting) ---
+    # Label Alignment (Majority Voting)
     def align_labels(labels, true_labels):
         mapped_labels = np.empty_like(true_labels, dtype=object)
         for cluster in np.unique(labels):
@@ -87,7 +86,7 @@ def run_clustering_analysis(file_path):
     ari_score = adjusted_rand_score(y_celltype, labels_pc)
     print(f"ARI (PC vs Truth): {ari_score:.4f}")
 
-    # --- Consistent Coloring ---
+    # Consistent Coloring 
     palette = sns.color_palette("tab10", k)
     type_to_color = {t: palette[i] for i, t in enumerate(unique_types)}
     
@@ -114,7 +113,6 @@ def run_clustering_analysis(file_path):
     plot_umap(ax3, aligned_raw, "K-Means (Raw 2000 Genes)")
 
     # Legend
-    from matplotlib.lines import Line2D
     legend_elements = [Line2D([0], [0], marker='o', color='w', label=t,
                              markerfacecolor=c, markersize=8) for t, c in type_to_color.items()]
     ax3.legend(handles=legend_elements, title="Cell Types", loc='center left', bbox_to_anchor=(1, 0.5), frameon=False)

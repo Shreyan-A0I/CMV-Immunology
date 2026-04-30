@@ -26,7 +26,7 @@ def compute_log_loss(y_true, y_prob, lambda_param, weights, penalty='l1'):
     return logistic_loss
 
 def fit_logistic_regression(X, y, learning_rate, lambda_param, iterations, penalty='l1', class_weight=None):
-    # initialize parameters
+    # Parameters needed for training
     n_samples, n_features = X.shape
     weights = np.zeros(n_features, dtype=np.float32)
     bias = 0.0
@@ -43,7 +43,7 @@ def fit_logistic_regression(X, y, learning_rate, lambda_param, iterations, penal
     else:
         sample_weights = np.ones(n_samples)
 
-    # store losses so we can graph them later
+    # Store losses so we can graph them later
     loss_history = []
     tol_loss = 1e-6 # Early stopping tolerance
 
@@ -86,7 +86,6 @@ def fit_logistic_regression(X, y, learning_rate, lambda_param, iterations, penal
     return weights, bias, loss_history
 
 if __name__ == "__main__":
-    # load data
     train_data = load_split("processed_data/train.h5ad")
     X_train = train_data["X"]
     y_train = np.asarray(train_data["y_cmv"]).astype(int)

@@ -4,10 +4,11 @@ import xgboost as xgb
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
 from dataloader import load_split
-from method2_logistic_regression import fit_logistic_regression, sigmoid, compute_log_loss
+from method2_logistic_regression import fit_logistic_regression, sigmoid
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from sklearn.utils.class_weight import compute_sample_weight
 
 def run_cascaded_prior():
     print("Loading data...")
@@ -41,7 +42,6 @@ def run_cascaded_prior():
 
     # 2. Train XGBoost for Ethnicity
     print("\nTraining XGBoost Ethnicity Model...")
-    from sklearn.utils.class_weight import compute_sample_weight
     sample_weights = compute_sample_weight("balanced", y_train_eth_enc)
     
     xgb_model = xgb.XGBClassifier(
@@ -68,7 +68,7 @@ def run_cascaded_prior():
     X_train_expanded = np.hstack([X_train, prior_train_scaled])
     X_val_expanded = np.hstack([X_val, prior_val_scaled])
 
-    # settings (matched to optimized method 2)
+    # Settings (matched to optimized method 2)
     lr = 0.1
     lam = 0.001
     iters = 1000

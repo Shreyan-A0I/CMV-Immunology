@@ -9,6 +9,7 @@ from sklearn.utils.class_weight import compute_sample_weight
 
 from dataloader import load_split
 
+# Evaluates the pseudobulk performance of the logistic regression and XGBoost models 
 def run_pseudobulk_evaluation():
     train_data = load_split("processed_data/train.h5ad")
     val_data = load_split("processed_data/val.h5ad")
